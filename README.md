@@ -1,6 +1,6 @@
-##Repo for code and data associated with "Species specific biomass drives macroalgal benthic primary production on temperate rocky reefs"
+## Repo for code and data associated with "Species specific biomass drives macroalgal benthic primary production on temperate rocky reefs"
 
-[Spector and Edwards 2020](Species-specific biomass drives macroalgal benthic primary production on temperate rocky reefs)
+[Spector and Edwards 2020](https://www.e-algae.org/journal/view.php?doi=10.4490/algae.2020.35.8.19)
 
 Abandon all hope ye who enter here
 
