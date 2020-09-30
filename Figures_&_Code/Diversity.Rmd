@@ -1,0 +1,211 @@
+---
+title: "vegan workshop - Eco-Data-Science"
+author: 'Ann Bui, adapted by P. Spector'
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+More details regarding ordination and visualization can be found [here](http://rpubs.com/an-bui/553683).
+
+```{r libraries-data, message = FALSE}
+# libraries
+install.packages("tidyverse")
+install.packages("vegan")
+library(tidyverse)
+library(vegan)
+library(gdata)
+
+setwd("/Users/PikesStuff/Desktop/Manuscript/Figures_&_Code/")
+# data
+# algal  communities
+algae <- read.xls("Diversity.xls") %>% 
+  column_to_rownames("Site")
+
+# environmental variables
+meta <- read.xls("Diversity_meta.xls")
+
+# set up a "metadata" frame - will be useful for plotting later!
+site_type <- meta %>% 
+  # selects the named columns
+  select(Site, Location)
+```
+
+### How speciose are my communities?
+
+```{r species-richness}
+#vegant::specsnumber() - counts the number of species in each site
+#output is a named vector
+sppr <- specnumber(algae)
+
+#
+sppr_aov <- aov(sppr ~ Location, data = site_type)
+summary(sppr_aov)
+```
+
+```{r species-richness-plot}
+# converting a named vector into a dataframe
+sppr_df <- sppr %>% 
+  # joined with site_type (metadata for easier plotting)
+  enframe() %>% 
+  # 
+  full_join(site_type, by = c("name" = "Site"))
+
+sppr_plot <- ggplot(sppr_df, aes(x = Location, y = value, color = Location)) +
+  geom_boxplot()
+sppr_plot
+```
+
+### How diverse are my communities?
+
+```{r shannon-diversity}
+# vegan::diversity() --> type into help page (Shannon diversity is default, and most commmon)
+shannondiv <- diversity(algae)
+#creates a named vector, Shannon diverisity for sites 
+# try simpson's diversity
+#modifiation of argument that diveristy takes
+simpsondiv <- diversity(algae, index = "simpson")
+```
+
+```{r shannon-diversity-plot}
+shandiv_df <- shannondiv %>% 
+  # converting into a dataframe
+  enframe() %>% 
+  # joining with metadata
+  full_join(., site_type, by = c("name" = "Site")) %>% 
+  # calculating mean shannon diversity for each landtype
+  group_by(Location) %>% 
+  summarize(mean = mean(value))
+
+shandiv_plot <- ggplot(shandiv_df, aes(x = Location, y = mean, fill = Location)) +
+  geom_col()
+shandiv_plot
+```
+
+## All code below is from an excellen workshop given by [An Bui](http://rpubs.com/an-bui/553683)
+
+### How different are my communities in species composition?
+
+#### perMANOVA
+```{r bird-permanova}
+# permutational analaysis of variance: are the centroids of my communities different?
+bird_perm <- adonis(birds ~ landtype, data = env)
+bird_perm
+```
+
+#### PCA
+
+```{r bird-PCA}
+# principale components analysis
+# vegan::rda() <-make sure to look up difference between constrained and unconstrained analysis
+birdPCA <- rda(birds)
+birdPCA
+# 
+
+summary(birdPCA)
+# Exp PCI explained 23.0590% of the variance (Eigenvalue); cumulative proportion explained is additive (across rows from proportion explained; add Eigenvalues)
+# 
+
+pcabiplot <- biplot(birdPCA)
+# calls PCA oridination plot in base R, not super informative
+# str(pcabiplot) --> next line calls this
+#extracts coordinates from outplot of biplot (following call; PCAscores)
+#Reminder: PCA bends axis to be most imformative
+
+# 
+PCAscores <- as.data.frame(pcabiplot$sites) %>% 
+  bind_cols(site_type, .)
+
+PCAvect <- as.data.frame(pcabiplot$species)
+
+
+PCA_plot <- ggplot(PCAscores) +
+  geom_point(aes(x = PC1, y = PC2, color = landtype)) +
+  geom_segment(data = PCAvect, aes(x = 0, y = 0, xend = PC1, yend = PC2), arrow = arrow(length = unit(0.2, "cm"))) +
+  geom_text(data = PCAvect, aes(x = PC1, y = PC2, label = rownames(PCAvect)))
+
+PCA_plot
+```
+
+#### NMDS
+
+Non-metric Multidimensional Scaling
+
+```{r bird-NMDS}
+#vegan::metaMDS
+bird_NMDS <- metaMDS(birds)
+
+bird_NMDS
+
+nmdsplot <- plot(bird_NMDS)
+#plot in base R
+#mapping of dissimilarirty; axis don't matter
+#circles = sites, + = species
+stressplot(bird_NMDS)
+#stress is a metric of how far a community has moved (in terms of dissimilarity); spread of stress, each point is a community. 
+```
+
+```{r NMDS-plot}
+# extract outputs of nMDS into data frame
+# 
+nmds_df <- as_tibble(bird_NMDS$points) %>% 
+  # binding it with metadata
+  bind_cols(site_type, .)
+
+nmds_plot <- ggplot(nmds_df, aes(x = MDS1, y = MDS2, color = landtype, shape = landtype)) +
+  geom_point(size = 3, alpha = 0.8) +
+  stat_ellipse()
+nmds_plot
+
+#?betadisper --> looks at dispersion from the centroid, useful in comparison to PERMANOVA 
+```
+
+##### Things to consider about stress
+
+```{r subsampled-NMDS}
+sub <- birds[sample(nrow(birds), 20), ]
+subNMDS <- metaMDS(sub)
+stressplot(subNMDS)
+#reducing to 20 interations gives acceptable stress (for this dataset)
+#nFit explores best fit in nMDS --> look in to this
+```
+
+### How is community structure related to specific environmental variables?
+
+```{r bird-CCA}
+# Canonical Correspondence Analysis
+# only shows vartion in communities based on enironmental variables (4 columns in env_var)
+# Hypothesis test for looking at which variables contribute to community compostion; do *not* run all variables at once; different than exploring in nMDS
+birdCCA <- cca(birds ~ canopy_height + stems_ha + big_stem_bas, data = env) #tests these three strucutural variables
+birdCCA
+#constrained vs unconstrained inertia; there is variation that is *not* explained by these three variables alone (canopy_height + stems_ha + big_stem_bas)
+
+```
+
+```{r bird-CCA-plot}
+ccaplot <- plot(birdCCA)
+# similar to PCA; x and y axis are most explained variables in the community 
+
+# extraxting coordaintes from the biplot
+#scaling factor is taken out of the structure of the plot: str(ccaplot)
+ccavectors <- as.data.frame(ccaplot$biplot * 5.15) #<-- last number changes based on what you see from str(ccaplot)
+
+#coordinates for sites and species from biplot output
+site_data <- as.data.frame(ccaplot$sites) %>% 
+  bind_cols(site_type, .)
+
+species_data <- as.data.frame(ccaplot$species)
+
+cca_plot <- ggplot(site_data) +
+  geom_point(aes(x = CCA1, y = CCA2, color = landtype), shape = 19) +
+  geom_segment(data = ccavectors, aes(x = 0, y = 0, xend = CCA1, yend = CCA2), arrow = arrow(length = unit(0.2, "cm"))) +
+    #scale_x_continuous(limits = c(-10, 16)) +
+    #scale_y_continuous(limits = c(-3, 12)) +
+  geom_point(data = species_data, aes(x = CCA1, y = CCA2), shape = 17, size = 2, color = "blue") +
+  geom_text(data = ccavectors, aes(x = CCA1, y = CCA2, label = rownames(ccavectors)))
+cca_plot
+```
